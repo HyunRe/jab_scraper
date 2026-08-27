@@ -1,0 +1,56 @@
+name: Deploy to AWS Lambda
+
+on:
+  push:
+    branches: [ "main" ]
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest
+
+      - name: Run Pytest
+        run: |
+          python -m pytest
+
+      # 🔍 403 에러 발생 시 생성된 HTML 로그를 Artifact로 업로드하는 스텝 추가
+      - name: Upload 403 Error HTML Log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: wanted-403-error-log
+          path: wanted_error_403.html
+          if-no-files-found: ignore  # 200 OK 등으로 파일이 없을 때는 에러 없이 통과
+
+      - name: Install dependencies & Zip
+        run: |
+          pip install --target ./package -r requirements.txt
+          cd package
+          zip -r ../deployment_package.zip .
+          cd ..
+          # lambda_function.py 와 assets 폴더까지 함께 압축하도록 수정
+          zip -g deployment_package.zip -r app/ assets/ main.py lambda_function.py
+
+      - name: Deploy to Lambda
+        uses: appleboy/lambda-action@v0.2.0
+        with:
+          aws_access_key_id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws_secret_access_key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws_region: ap-northeast-2
+          function_name: job-scraper-lambda
+          zip_file: deployment_package.zip
+          # Lambda 환경변수로 GITHUB_TOKEN 및 Repository 정보 전달
+          environment: GEMINI_API_KEY=${{ secrets.GEMINI_API_KEY }},GMAIL_USER=${{ secrets.GMAIL_USER }},GMAIL_PASS=${{ secrets.GMAIL_PASS }},TO_EMAIL=${{ secrets.TO_EMAIL }},NOTION_TOKEN=${{ secrets.NOTION_TOKEN }},NOTION_JOB_SCRIPTER_DB_ID=${{ secrets.NOTION_JOB_SCRIPTER_DB_ID }},NOTION_JOB_ANALYSIS_DB_ID=${{ secrets.NOTION_JOB_ANALYSIS_DB_ID }},NOTION_INTERVIEW_PREP_DB_ID=${{ secrets.NOTION_INTERVIEW_PREP_DB_ID }},GITHUB_TOKEN=${{ secrets.GH_PAT }},GITHUB_REPOSITORY=${{ github.repository }}

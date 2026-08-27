@@ -1,0 +1,7 @@
+google-genai
+requests
+beautifulsoup4
+notion-client
+curl_cffi
+json-repair
+python-dotenv
