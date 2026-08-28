@@ -19,7 +19,8 @@ def test_main_execution_pipeline():
 
     with patch.dict(os.environ, mock_env), \
          patch("app.infrastructure.llm_evaluator.GeminiLLMEvaluator"), \
-         patch("lambda_function._sync_completed_interviews") as mock_sync_interviews, \
+         patch("main._sync_completed_interviews") as mock_sync_interviews, \
+         patch("main._sync_requested_analyses") as mock_sync_requested, \
          patch("app.presentation.notion_scripter_notifier.NotionScripterNotifier"), \
          patch("app.presentation.notion_analysis_notifier.NotionAnalysisNotifier"), \
          patch("app.presentation.notion_interview_notifier.NotionInterviewNotifier"), \
@@ -33,8 +34,8 @@ def test_main_execution_pipeline():
             runpy.run_path("main.py", run_name="__main__")
 
             # DB 1 -> DB 2 '요청' 건 스캔 수행 확인
-            mock_service_instance.process_requested_analyses.assert_called_once()
-            print("  └ [OK] DB 1 -> DB 2 '요청' 건 스캔(process_requested_analyses) 실행 성공")
+            mock_sync_requested.assert_called_once()
+            print("  └ [OK] DB 1 -> DB 2 '요청' 건 스캔(_sync_requested_analyses) 실행 성공")
 
             # DB 2 -> DB 3 '지원 완료' 건 스캔 수행 확인
             mock_sync_interviews.assert_called_once()

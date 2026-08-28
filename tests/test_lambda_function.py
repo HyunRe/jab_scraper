@@ -15,17 +15,29 @@ class TestJobFilteringAndChunking:
     @patch("lambda_function.GeminiLLMEvaluator")
     @patch("lambda_function.JobRecommendationService")
     def test_chunk_processing_with_60_jobs(
-            self, mock_service_cls, mock_gemini, mock_repo, mock_email_cls,
-            mock_collector_cls, mock_dedup_cls, mock_scripter_cls,
-            mock_analysis_cls, mock_interview_cls
+        self,
+        mock_service_cls,
+        mock_gemini,
+        mock_repo,
+        mock_email_cls,
+        mock_collector_cls,
+        mock_dedup_cls,
+        mock_scripter_cls,
+        mock_analysis_cls,
+        mock_interview_cls,
     ):
         """총 60개의 필터 통과 공고가 들어왔을 때 수집, 중복제거, 노션 DB1 적재 및 이메일 발송 검증"""
 
         # 60개의 테스트용 주니어 공고 생성
         dummy_jobs = [
             Job(
-                id=str(i), platform="원티드", title=f"주니어 백엔드 개발자 {i}", company=f"테스트기업 {i}",
-                url=f"https://example.com/{i}", location="서울 강남구", required_experience="신입~2년"
+                id=str(i),
+                platform="원티드",
+                title=f"주니어 백엔드 개발자 {i}",
+                company=f"테스트기업 {i}",
+                url=f"https://example.com/{i}",
+                location="서울 강남구",
+                required_experience="신입~2년",
             )
             for i in range(1, 61)
         ]
@@ -50,16 +62,19 @@ class TestJobFilteringAndChunking:
         event, context = {}, {}
 
         # lambda_function.py의 실제 os.environ.get 키 이름과 정확히 일치시킴
-        with patch.dict("os.environ", {
-            "GEMINI_API_KEY": "test_key",
-            "GMAIL_USER": "test@gmail.com",
-            "GMAIL_PASS": "test_pass",
-            "TO_EMAIL": "target@gmail.com",
-            "NOTION_TOKEN": "test_token",
-            "NOTION_JOB_SCRIPTER_DB_ID": "mock_scripter_db_id",
-            "NOTION_JOB_ANALYSIS_DB_ID": "mock_analysis_db_id",
-            "NOTION_INTERVIEW_PREP_DB_ID": "mock_interview_prep_db_id"
-        }):
+        with patch.dict(
+            "os.environ",
+            {
+                "GEMINI_API_KEY": "test_key",
+                "GMAIL_USER": "test@gmail.com",
+                "GMAIL_PASS": "test_pass",
+                "TO_EMAIL": "target@gmail.com",
+                "NOTION_TOKEN": "test_token",
+                "NOTION_JOB_SCRIPTER_DB_ID": "mock_scripter_db_id",
+                "NOTION_JOB_ANALYSIS_DB_ID": "mock_analysis_db_id",
+                "NOTION_INTERVIEW_PREP_DB_ID": "mock_interview_prep_db_id",
+            },
+        ):
             response = lambda_handler(event, context)
 
         # 디버깅 출력 (실패 시 상세 응답 및 인스턴스 호출 현황 확인)
