@@ -5,26 +5,19 @@ from lambda_function import lambda_handler
 
 
 class TestJobFilteringAndChunking:
-    @patch("lambda_function.NotionInterviewNotifier")
-    @patch("lambda_function.NotionAnalysisNotifier")
+    # lambda_function.py 내부에서 실제로 import 및 사용하는 객체들만 patch
     @patch("lambda_function.NotionScripterNotifier")
     @patch("lambda_function.JobDeduplicator")
     @patch("lambda_function.CompositeJobCollector")
     @patch("lambda_function.EmailNotifier")
     @patch("lambda_function.LocalFileRepository")
-    @patch("lambda_function.GeminiLLMEvaluator")
-    @patch("lambda_function.JobRecommendationService")
     def test_chunk_processing_with_60_jobs(
         self,
-        mock_service_cls,
-        mock_gemini,
         mock_repo,
         mock_email_cls,
         mock_collector_cls,
         mock_dedup_cls,
         mock_scripter_cls,
-        mock_analysis_cls,
-        mock_interview_cls,
     ):
         """총 60개의 필터 통과 공고가 들어왔을 때 수집, 중복제거, 노션 DB1 적재 및 이메일 발송 검증"""
 
@@ -77,7 +70,7 @@ class TestJobFilteringAndChunking:
         ):
             response = lambda_handler(event, context)
 
-        # 디버깅 출력 (실패 시 상세 응답 및 인스턴스 호출 현황 확인)
+        # 디버깅 출력
         print(f"\n================ [DEBUG RESPONSE] ================\n{response}\n==================================================")
         print(f"NotionScripter save_raw_jobs 호출 횟수: {mock_scripter_instance.save_raw_jobs.call_count}")
         print(f"EmailNotifier send_daily_raw_report 호출 횟수: {mock_email_instance.send_daily_raw_report.call_count}")
