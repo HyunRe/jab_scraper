@@ -5,7 +5,6 @@ from lambda_function import lambda_handler
 
 
 class TestJobFilteringAndChunking:
-    # lambda_function.py 내부에서 실제로 import 및 사용하는 객체들만 patch
     @patch("lambda_function.NotionScripterNotifier")
     @patch("lambda_function.JobDeduplicator")
     @patch("lambda_function.CompositeJobCollector")
@@ -31,6 +30,7 @@ class TestJobFilteringAndChunking:
                 url=f"https://example.com/{i}",
                 location="서울 강남구",
                 required_experience="신입~2년",
+                deadline="상시 채용"  # 마감일 필더 통과용 데이터 추가
             )
             for i in range(1, 61)
         ]
@@ -42,10 +42,12 @@ class TestJobFilteringAndChunking:
 
         mock_dedup = MagicMock()
         mock_dedup.filter_new_jobs.side_effect = lambda jobs: jobs  # 중복 없음 처리
+        mock_dedup.is_expired_deadline.return_value = False  # 마감일 미경과 처리
         mock_dedup_cls.return_value = mock_dedup
 
-        # NotionScripterNotifier Mock 설정
+        # NotionScripterNotifier Mock 설정 (저장 성공 시 전달받은 jobs 반환)
         mock_scripter_instance = MagicMock()
+        mock_scripter_instance.save_raw_jobs.side_effect = lambda jobs, **kwargs: jobs
         mock_scripter_cls.return_value = mock_scripter_instance
 
         # EmailNotifier Mock 설정
@@ -54,7 +56,6 @@ class TestJobFilteringAndChunking:
 
         event, context = {}, {}
 
-        # lambda_function.py의 실제 os.environ.get 키 이름과 정확히 일치시킴
         with patch.dict(
             "os.environ",
             {
@@ -69,11 +70,6 @@ class TestJobFilteringAndChunking:
             },
         ):
             response = lambda_handler(event, context)
-
-        # 디버깅 출력
-        print(f"\n================ [DEBUG RESPONSE] ================\n{response}\n==================================================")
-        print(f"NotionScripter save_raw_jobs 호출 횟수: {mock_scripter_instance.save_raw_jobs.call_count}")
-        print(f"EmailNotifier send_daily_raw_report 호출 횟수: {mock_email_instance.send_daily_raw_report.call_count}")
 
         # 검증
         assert response["statusCode"] == 200

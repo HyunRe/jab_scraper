@@ -1,18 +1,20 @@
 import base64
 import json
 import os
+import re
 import requests
-from typing import List, Dict, Any, Tuple
+from datetime import datetime
+from typing import List, Dict, Any, Tuple, Set, Optional
 
 
 class JobDeduplicator:
-    def __init__(self, repo_slug: str = None, file_path: str = "data/processed_jobs.json", github_token: str = None):
+    def __init__(self, repo_slug: Optional[str] = None, file_path: str = "data/processed_jobs.json", github_token: Optional[str] = None):
         self.repo_slug = repo_slug or os.environ.get("GITHUB_REPOSITORY")  # 예: owner/repo
         self.file_path = file_path
         self.github_token = github_token or os.environ.get("GITHUB_TOKEN")
         self.processed_ids, self.file_sha = self._load_processed_ids()
 
-    def _load_processed_ids(self) -> Tuple[set, str]:
+    def _load_processed_ids(self) -> Tuple[Set[Any], Optional[str]]:
         """GitHub API를 통해 repository의 processed_jobs.json 조회"""
         if not self.repo_slug or not self.github_token:
             print("[Deduplicator] GITHUB_REPOSITORY 또는 GITHUB_TOKEN 설정이 없어 중복 검사를 건너뜁니다.")
@@ -42,18 +44,68 @@ class JobDeduplicator:
             print(f"[Deduplicator] GitHub ID 목록 로드 중 오류 발생: {e}")
             return set(), None
 
+    def is_expired_deadline(self, deadline_str: str) -> bool:
+        """
+        마감일 문자열을 분석하여 이미 지난 마감일인지 판단
+        - '상시', '채용시' 등의 경우 False (마감 안 됨)
+        - 과거 날짜일 경우 True (마감 됨)
+        """
+        if not deadline_str:
+            return False
+
+        deadline_str = str(deadline_str).strip()
+
+        # 상시 채용 키워드인 경우 마감되지 않은 것으로 판단
+        if any(keyword in deadline_str for keyword in ["상시", "채용시", "추후", "마감시"]):
+            return False
+
+        today = datetime.now().date()
+
+        try:
+            # 1. YYYY-MM-DD 또는 YYYY-MM-DD HH:MM:SS 포맷 추출
+            match_full = re.search(r'(\d{4})[-.\/](\d{1,2})[-.\/](\d{1,2})', deadline_str)
+            if match_full:
+                year, month, day = map(int, match_full.groups())
+                deadline_date = datetime(year, month, day).date()
+                return deadline_date < today
+
+            # 2. MM/DD 형태 추출 (연도가 없는 경우 현재 연도 적용)
+            match_short = re.search(r'(\d{1,2})[-.\/](\d{1,2})', deadline_str)
+            if match_short:
+                month, day = map(int, match_short.groups())
+                current_year = today.year
+                deadline_date = datetime(current_year, month, day).date()
+                return deadline_date < today
+
+        except Exception as e:
+            print(f"[Deduplicator] 마감일 파싱 예외 발생 ('{deadline_str}'): {e}")
+
+        return False
+
     def filter_new_jobs(self, jobs: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        """수집된 공고 중 이미 처리된 공고 제외"""
+        """수집된 공고 중 이미 처리된 공고 및 마감일이 지난 공고 제외"""
         new_jobs = []
+        expired_count = 0
+
         for job in jobs:
+            # ID 또는 URL 키 추출
             if isinstance(job, dict):
                 job_key = str(job.get("id") or job.get("url") or "")
+                deadline = job.get("deadline", "")
             else:
                 job_key = str(getattr(job, "id", None) or getattr(job, "url", None) or "")
+                deadline = getattr(job, "deadline", "")
+
+            # 1. 마감일 검사
+            if self.is_expired_deadline(deadline):
+                expired_count += 1
+                continue
+
+            # 2. 중복 ID 검사
             if job_key and job_key not in self.processed_ids:
                 new_jobs.append(job)
 
-        print(f"[Deduplicator] 전체 수집: {len(jobs)}건 | 신규 공고: {len(new_jobs)}건 (중복 {len(jobs) - len(new_jobs)}건 제외)")
+        print(f"[Deduplicator] 전체 수집: {len(jobs)}건 | 신규 공고: {len(new_jobs)}건 (중복/마감 제외: {len(jobs) - len(new_jobs)}건, 마감 지남: {expired_count}건)")
         return new_jobs
 
     def save_processed_jobs(self, processed_jobs: List[Dict[str, Any]]):

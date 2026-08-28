@@ -100,3 +100,20 @@ def test_save_processed_jobs(mock_get, mock_put, sample_jobs):
     except AssertionError as e:
         print(f"❌ [TEST FAIL] GitHub 저장 테스트 실패: {e}\n")
         raise e
+
+
+def test_is_expired_deadline():
+    print("\n[TEST START] Deduplicator - 마감일 미경과 및 마감 공고 판별 테스트")
+    deduplicator = JobDeduplicator()
+
+    # Past date (마감됨)
+    assert deduplicator.is_expired_deadline("2020-01-01") is True
+    assert deduplicator.is_expired_deadline("2020.01.01") is True
+
+    # Future / Active date (마감 안됨)
+    assert deduplicator.is_expired_deadline("2099-12-31") is False
+    assert deduplicator.is_expired_deadline("상시 채용") is False
+    assert deduplicator.is_expired_deadline("채용시 마감") is False
+    assert deduplicator.is_expired_deadline("") is False
+
+    print("✅ [TEST SUCCESS] 마감일 판별 테스트 통과!\n")

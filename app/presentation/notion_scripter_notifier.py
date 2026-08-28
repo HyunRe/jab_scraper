@@ -1,6 +1,6 @@
 from datetime import datetime
 from notion_client import Client
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Set
 
 
 class NotionScripterNotifier:
@@ -9,11 +9,60 @@ class NotionScripterNotifier:
         self.notion = Client(auth=notion_token)
         self.scripter_db_id = scripter_db_id
 
+    def fetch_existing_job_titles(self) -> Set[str]:
+        """DB 1에 이미 등록된 모든 공고명([회사명] 공고명)을 조회하여 Set으로 반환"""
+        if not self.scripter_db_id:
+            return set()
+
+        existing_titles = set()
+        try:
+            import requests
+            headers = {
+                "Authorization": f"Bearer {self.notion_token}",
+                "Notion-Version": "2022-06-28",
+                "Content-Type": "application/json"
+            }
+
+            has_more = True
+            next_cursor = None
+
+            while has_more:
+                body: Dict[str, Any] = {
+                    "page_size": 100
+                }
+                if next_cursor:
+                    body["start_cursor"] = next_cursor
+
+                res = requests.post(
+                    f"https://api.notion.com/v1/databases/{self.scripter_db_id}/query",
+                    headers=headers,
+                    json=body
+                )
+                response = res.json()
+
+                for page in response.get("results", []):
+                    props = page.get("properties", {})
+                    title_list = props.get("공고명", {}).get("title", [])
+                    if title_list:
+                        full_title = title_list[0].get("text", {}).get("content", "").strip()
+                        if full_title:
+                            existing_titles.add(full_title)
+
+                has_more = response.get("has_more", False)
+                next_cursor = response.get("next_cursor")
+
+            print(f"[Notion DB 1] 기존 등록된 공고명 총 {len(existing_titles)}건 조회 완료")
+        except Exception as e:
+            print(f"[Notion DB 1] 기존 공고명 목록 조회 실패: {e}")
+
+        return existing_titles
+
     def save_raw_jobs(self, jobs: List[Any], deduplicator=None) -> List[Dict[str, Any]]:
-        """JobDeduplicator를 통과한 신규 공고만 DB 1(공고 스크립트)에 적재"""
+        """JobDeduplicator 및 노션 DB 1 공고명 중복 검사를 통과한 신규 공고만 적재"""
         if not self.scripter_db_id:
             raise ValueError("DB 1 (Scripter Database ID)가 설정되지 않았습니다.")
 
+        # 1. GitHub 기반 1차 중복 제거 (Deduplicator)
         target_jobs = jobs
         if deduplicator:
             job_dicts = []
@@ -36,6 +85,9 @@ class NotionScripterNotifier:
                 if j_key in filtered_keys:
                     target_jobs.append(j)
 
+        # 2. 노션 DB 1 기존 공고명 기반 2차 중복 제거
+        existing_titles = self.fetch_existing_job_titles()
+
         today_iso = datetime.now().strftime("%Y-%m-%d")
         saved_jobs = []
 
@@ -44,13 +96,16 @@ class NotionScripterNotifier:
                 company = job.get("company", "회사명 미상") if isinstance(job, dict) else getattr(job, "company", "회사명 미상")
                 title = job.get("title", "공고명 미상") if isinstance(job, dict) else getattr(job, "title", "공고명 미상")
                 location = job.get("location", "정보 없음") if isinstance(job, dict) else getattr(job, "location", "정보 없음")
-                req_exp = job.get("required_experience", "무관") if isinstance(job, dict) else getattr(job,
-                                                                                                     "required_experience",
-                                                                                                     "무관")
+                req_exp = job.get("required_experience", "무관") if isinstance(job, dict) else getattr(job, "required_experience", "무관")
                 deadline = job.get("deadline", "상시 채용") if isinstance(job, dict) else getattr(job, "deadline", "상시 채용")
                 url = job.get("url", "") if isinstance(job, dict) else getattr(job, "url", "")
 
                 title_text = f"[{company}] {title}"
+
+                # 노션에 이미 존재하는 공고명일 경우 스킵
+                if title_text in existing_titles:
+                    print(f"[Notion DB 1] 스킵 (노션 공고명 중복): {title_text}")
+                    continue
 
                 new_page = self.notion.pages.create(
                     parent={"database_id": self.scripter_db_id},
@@ -86,11 +141,14 @@ class NotionScripterNotifier:
                     elif hasattr(job, "page_id"):
                         job.page_id = page_id
 
+                # 중복 등록 방지를 위해 방금 추가한 공고명도 local set에 기록
+                existing_titles.add(title_text)
                 saved_jobs.append(job)
                 print(f"[Notion DB 1] 공고 스크립트 적재 완료: {title_text}")
             except Exception as e:
                 print(f"[Notion DB 1] 적재 오류: {e}")
 
+        # 신규 적재건 저장 ID 동기화
         if deduplicator and saved_jobs:
             saved_dicts = []
             for j in saved_jobs:
@@ -140,7 +198,7 @@ class NotionScripterNotifier:
 
             # 페이징 루프 처리
             while has_more:
-                body = {
+                body: Dict[str, Any] = {
                     "page_size": 100,
                     "filter": {
                         "property": status_field,
@@ -150,7 +208,7 @@ class NotionScripterNotifier:
                     }
                 }
                 if next_cursor:
-                    body["start_cursor"] = next_cursor
+                    body["start_cursor"] = str(next_cursor)
 
                 res = requests.post(
                     f"https://api.notion.com/v1/databases/{self.scripter_db_id}/query",

@@ -1,8 +1,7 @@
 import os
 import re
-import json
 from dataclasses import asdict
-from typing import Any, List, Dict
+from typing import Any, List, Dict, Optional, cast
 
 from app.infrastructure.collectors.wanted_collector import WantedCollector
 from app.infrastructure.collectors.saramin_collector import SaraminCollector
@@ -19,13 +18,18 @@ from app.presentation.email_notifier import EmailNotifier
 from app.domain.models import Job
 
 
-def is_target_job(item) -> bool:
-    """1차 파이썬 필터링: 수도권 지역 및 3년 이하/신입 타겟 공고 필터링"""
+def is_target_job(item: Dict[str, Any] | Job, deduplicator: Optional[JobDeduplicator] = None) -> bool:
+    """1차 파이썬 필터링: 수도권 지역, 3년 이하/신입 타겟 및 마감일 미경과 공고 필터링"""
     loc = item.get("location", "") if isinstance(item, dict) else getattr(item, "location", "")
     exp = item.get("required_experience", "") if isinstance(item, dict) else getattr(item, "required_experience", "")
     title = item.get("title", "") if isinstance(item, dict) else getattr(item, "title", "")
+    deadline = item.get("deadline", "") if isinstance(item, dict) else getattr(item, "deadline", "")
 
-    # 1. 지역 조건 (수도권 주요 시/도 및 거점 IT 단지/구 단위 포함)
+    # 1. 마감일 검증 (deduplicator 파서 활용)
+    if deduplicator and deduplicator.is_expired_deadline(deadline):
+        return False
+
+    # 2. 지역 조건 (수도권 주요 시/도 및 거점 IT 단지/구 단위 포함)
     allowed_regions = [
         "서울", "경기", "인천", "수도권",
         "강남", "구로", "가산", "판교", "분당", "마포",
@@ -34,7 +38,7 @@ def is_target_job(item) -> bool:
     if not any(r in loc for r in allowed_regions):
         return False
 
-    # 2. 경력 조건 (신입 및 3년 이하, 1년 이하 타겟)
+    # 3. 경력 조건 (신입 및 3년 이하, 1년 이하 타겟)
     exp_text = f"{exp} {title}".lower()
 
     # 허용 패턴 (신입, 주니어, 1년 이하, 1~3년 등)
@@ -109,30 +113,34 @@ def lambda_handler(event, context):
             if isinstance(job, (Job, dict))
         ]
 
+        # GitHub JSON 기록 기반 1차 중복 및 마감일 필터링
         new_jobs = deduplicator.filter_new_jobs(collected_dicts)
 
-        # 1차 조건 필터링 (지역/경력)
-        filtered_jobs = [job for job in new_jobs if is_target_job(job)]
+        # 1차 조건 필터링 (지역/경력/마감일)
+        filtered_jobs = [job for job in new_jobs if is_target_job(job, deduplicator=deduplicator)]
         print(f"[Lambda] 신규 수집 {len(new_jobs)}건 중 1차 조건 필터 통과: {len(filtered_jobs)}건")
 
         if filtered_jobs:
-            job_objects: List[Job] = []
-            for item in filtered_jobs:
-                if isinstance(item, dict):
-                    job_objects.append(Job(**item))
-                else:
-                    job_objects.append(item)
+            job_objects: List[Job] = [
+                Job(**item) if isinstance(item, dict) else cast(Job, cast(object, item))
+                for item in filtered_jobs
+            ]
 
             if job_objects:
-                # 1. 노션 DB 1(공고 스크립트)에 수집 공고 저장
+                saved_jobs: List[Job] = job_objects
+                # 1. 노션 DB 1(공고 스크립트)에 수집 공고 저장 (노션 공고명 중복 검사 2차 수행)
                 if scripter_notifier:
-                    scripter_notifier.save_raw_jobs(jobs=job_objects, deduplicator=deduplicator)
-                    print(f"[Notion DB 1] {len(job_objects)}건 공고 스크립트 DB 저장 완료")
+                    res_saved = scripter_notifier.save_raw_jobs(jobs=job_objects, deduplicator=deduplicator)
+                    saved_jobs = [
+                        j if isinstance(j, Job) else Job(**j)
+                        for j in res_saved
+                    ]
+                    print(f"[Notion DB 1] 최종 {len(saved_jobs)}건 공고 스크립트 DB 저장 완료")
 
                 # 2. Daily 이메일 리포트 발송
-                if GMAIL_USER and GMAIL_PASS and TO_EMAIL:
-                    email_notifier.send_daily_raw_report(job_objects)
-                    print(f"[Email] {len(job_objects)}건 일일 공고 수집 리포트 발송 완료")
+                if GMAIL_USER and GMAIL_PASS and TO_EMAIL and saved_jobs:
+                    email_notifier.send_daily_raw_report(saved_jobs)
+                    print(f"[Email] {len(saved_jobs)}건 일일 공고 수집 리포트 발송 완료")
 
         return {
             "statusCode": 200,
