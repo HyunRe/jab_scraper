@@ -169,12 +169,12 @@ job_scraper/
 
 ## 3-2. 핵심 비즈니스 로직
 
-| 구분                      | 비즈니스 규칙                                    | 처리 방식                                                                            |
-| -----------------------| ------------------------------------------ | -------------------------------------------------------------------------------- |
-| **공고 수집 (1단계)**    | 매일 08시 스케줄링으로 공고 자동 수집 및 중복 제거             | AWS Lambda 실행 시 URL 중복 검사 후 Notion Job Scripter DB 저장                           |
-| **선별 분석 (2단계)**    | 공고 DB 내 선택 컬럼 상태가 [요청]인 항목만 LLM 분석     | 사용자가 Python 스크립트 실행 시 Gemini API를 통해 이력서/자소서 매칭 분석 후 Notion Job Analysis DB 저장 |
-| **면접 대비 (3단계)**    | 분석 DB 내 지원 컬럼 상태가 [지원완료]인 항목만 면접 질문 생성 | Python 스크립트 실행 시 해당 공고 기반 맞춤 예상 면접 질문 생성 후 Notion Interview Prep DB 저장         |
-| **LLM Output 정형화** | Gemini 응답 텍스트 포맷 오류 방지                     | JSON Output Mode 적용 및 json-repair를 이용한 JSON 문법 자동 보정                           |
+| 구분 | 비즈니스 규칙 | 처리 방식 |
+|---|---|---|
+| **공고 수집 (1단계)** | 매일 08시 스케줄링으로 공고 자동 수집 및 중복 제거 | AWS Lambda 실행 시 URL 중복 검사 후 Notion Job Scripter DB 저장 |
+| **선별 분석 (2단계)** | 공고 DB 내 선택 컬럼 상태가 요청인 항목만 LLM 분석 | 사용자가 Python 스크립트 실행 시 Gemini API를 통해 이력서/자소서 매칭 분석 후 Notion Job Analysis DB 저장 |
+| **면접 대비 (3단계)** | 분석 DB 내 지원 컬럼 상태가 지원완료인 항목만 면접 질문 생성 | Python 스크립트 실행 시 해당 공고 기반 맞춤 예상 면접 질문 생성 후 Notion Interview Prep DB 저장 |
+| **LLM Output 정형화** | Gemini 응답 텍스트 포맷 오류 방지 | JSON Output Mode 적용 및 json-repair를 이용한 JSON 문법 자동 보정 |
 
 ---
 
@@ -232,17 +232,11 @@ job_scraper/
   2. Job Analysis — 공고 분석 DB
   3. Interview Prep — 면접 준비 DB
 
-* 공고 수집은 AWS Lambda + EventBridge를 통해 매일 08시에 실행
+* 공고 수집은 AWS Lambda + EventBridge를 통해 매일 08시에 실행 수집된 공고는 Job Scripter DB에만 저장
 
-* 수집된 공고는 Job Scripter DB에만 저장
+* 사용자가 선택 컬럼을 [요청]으로 변경한 공고만 Python 스크립트를 통해 Gemini 분석 수행 분석 결과는 Job Analysis DB로 전달
 
-* 사용자가 선택 컬럼을 [요청]으로 변경한 공고만 Python 스크립트를 통해 Gemini 분석 수행
-
-* 분석 결과는 Job Analysis DB로 전달
-
-* 사용자가 지원 컬럼을 [지원완료]로 변경한 공고만 면접 질문 생성
-
-* 생성된 결과는 Interview Prep DB로 전달
+* 사용자가 지원 컬럼을 [지원완료]로 변경한 공고만 면접 질문 생성 생성된 결과는 Interview Prep DB로 전달
 
 **결과**
 
