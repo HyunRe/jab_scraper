@@ -1,6 +1,6 @@
-# Job Scraper
+# Job Scraper (구직 사이트 자동 수집 및 Gemini AI 맞춤 분석 파이프라인)
 
-### 구직 사이트 자동 수집 및 Gemini AI 맞춤 분석 파이프라인
+---
 
 AWS Lambda/EventBridge 기반의 **매일 08시 공고 자동 수집**과 **3단계 Notion DB 연동**, **수동 트리거형 Gemini LLM 분석**을 결합하여 불필요한 LLM API 호출을 최소화한 자동화 파이프라인입니다.
 
