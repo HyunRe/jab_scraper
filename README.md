@@ -72,32 +72,27 @@ AWS Lambda/EventBridge 기반의 **매일 08시 공고 자동 수집**과 **3단
 #### 시스템 아키텍처
 
 ```text
-  [ AWS EventBridge / Scheduled Trigger (Daily 08:00 KST) ]
-                             │
-                             ▼
-  [ AWS Lambda : Job Scraper Engine ] ──► (Run Collectors & Deduplicator)
-                             │
-                             ▼
-  [ 1. Notion Job Scripter DB (전체 공고 DB) ]
-                             │
-                             │ 사용자가 '선택' 컬럼 → [요청] 변경
-                             ▼
-  [ Local / Python Script Manual Run (LLM Evaluator) ]
-  ├── 1차: [요청] 건 추출
-  │          └──► Gemini API
-  │                └── 이력서/자소서 적합도 분석
-  │
-  │                                    ▼
-  │                     [ 2. Notion Job Analysis DB (분석 DB) ]
-  │                                    │
-  │                                    │ 사용자가 '지원' 컬럼 → [지원완료] 변경
-  │                                    ▼
-  └── 2차: [지원완료] 건 추출
-             └──► Gemini API
-                   └── 예상 면접 질문 생성
-                                        │
-                                        ▼
-                        [ 3. Notion Interview Prep DB (면접 DB) ]
+ [ AWS EventBridge / Scheduled Trigger (Daily 08:00 KST) ]
+    │
+    ▼
+[ AWS Lambda : Job Scraper Engine ] ──► (Run Collectors & Deduplicator)
+    │
+    ▼
+[ 1. Notion Job Scripter DB (전체 공고 DB) ]
+    │
+    │ 사용자가 '선택' 컬럼 → [요청] 변경
+    ▼
+[ Local / Python Script Manual Run (LLM Evaluator) ]
+    ├── 1차: [요청] 건 추출
+    │      └──► Gemini API → 이력서/자소서 적합도 분석
+    │          ▼
+    │    [ 2. Notion Job Analysis DB (분석 DB) ]
+    │          │ 사용자가 '지원' 컬럼 → [지원완료] 변경
+    │          ▼
+    └── 2차: [지원완료] 건 추출
+           └──► Gemini API → 예상 면접 질문 생성
+               ▼
+         [ 3. Notion Interview Prep DB (면접 DB) ]
 ```
 
 #### CI/CD 배포 파이프라인
