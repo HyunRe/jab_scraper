@@ -180,6 +180,20 @@ class NotionScripterNotifier:
             return "RALLIT"
         elif "jasoseol.com" in url_lower:
             return "JASOSEOL"
+        elif "catch.co.kr" in url_lower:
+            return "CATCH"
+        elif "incruit.com" in url_lower:
+            return "INCRUIT"
+        elif "jobplanet.co.kr" in url_lower:
+            return "JOBPLANET"
+        elif "linkareer.com" in url_lower:
+            return "LINKAREER"
+        elif "linkedin.com" in url_lower:
+            return "LINKEDIN"
+        elif "rememberapp.co.kr" in url_lower:
+            return "REMEMBER"
+        elif "zighang.com" in url_lower:
+            return "ZIGHANG"
         return "기타"
 
     def fetch_jobs_by_status(self, status_field: str, status_value: str) -> List[Dict[str, Any]]:

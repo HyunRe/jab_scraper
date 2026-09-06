@@ -9,7 +9,9 @@ class ResumePlatformParser:
         "JOBKOREA": "2. JOBKOREA (잡코리아)",
         "SARAMIN": "3. SARAMIN (사람인)",
         "JUMPIT": "4. JUMPIT (점핏)",
-        "RALLIT": "5. RALLIT (렐릿)"
+        "RALLIT": "5. RALLIT (렐릿)",
+        "INCRUIT": "6. INCRUIT (인크루트)",
+        "LINKAREER": "7. LINKAREER (링커리어)",
     }
 
     def __init__(self, raw_text: str):
@@ -34,8 +36,12 @@ class ResumePlatformParser:
     def get_resume_for_platform(self, platform_name: str) -> str:
         norm_key = platform_name.upper()
 
-        # 자소설닷컴은 구직 사이트 전용 섹션 없이 노션 Master Data(노션 이력서)만 반환
-        if norm_key == "JASOSEOL":
+        # 전용 이력서 서식이 없는 플랫폼들
+        no_custom_resume_platforms = {
+            "JASOSEOL", "REMEMBER", "JOBPLANET", "LINKEDIN", "ZIGHANG", "CATCH"
+        }
+
+        if norm_key in no_custom_resume_platforms:
             return self.master_data
 
         platform_section = self.platform_sections.get(norm_key, "")

@@ -9,6 +9,13 @@ from app.infrastructure.collectors.jumpit_collector import JumpitCollector
 from app.infrastructure.collectors.jobkorea_collector import JobKoreaCollector
 from app.infrastructure.collectors.rallit_collector import RallitCollector
 from app.infrastructure.collectors.jasoseol_collector import JasoseolCollector
+from app.infrastructure.collectors.catch_collector import CatchCollector
+from app.infrastructure.collectors.incruit_collector import IncruitCollector
+from app.infrastructure.collectors.jobplanet_collector import JobplanetCollector
+from app.infrastructure.collectors.linkareer_collector import LinkareerCollector
+from app.infrastructure.collectors.linkedin_collector import LinkedinCollector
+from app.infrastructure.collectors.remember_collector import RememberCollector
+from app.infrastructure.collectors.zighang_collector import ZighangCollector
 from app.infrastructure.composite_collector import CompositeJobCollector
 from app.infrastructure.file_repository import LocalFileRepository
 from app.infrastructure.deduplicator import JobDeduplicator
@@ -96,7 +103,14 @@ def lambda_handler(event, context):
             JumpitCollector(),
             JobKoreaCollector(),
             RallitCollector(),
-            JasoseolCollector()
+            JasoseolCollector(),
+            CatchCollector(),
+            IncruitCollector(),
+            JobplanetCollector(),
+            LinkareerCollector(),
+            LinkedinCollector(),
+            RememberCollector(),
+            ZighangCollector()
         ]
         job_collector = CompositeJobCollector(collectors)
         collected_jobs = job_collector.collect()
