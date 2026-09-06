@@ -1,4 +1,5 @@
 import pytest
+from curl_cffi import requests
 
 # 기존 수집기
 from app.infrastructure.collectors.wanted_collector import WantedCollector
@@ -103,6 +104,43 @@ def test_jobplanet_collector_real_fetch():
 
 def test_linkareer_collector_real_fetch():
     print("\n[TEST START] 링커리어 수집기 테스트 시작")
+
+    # 테스트 코드 내 디버그 요청 부분도 수정
+    debug_res = requests.post(
+        "https://api.linkareer.com/graphql",
+        headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+            "Content-Type": "application/json",
+            "Device": "web",
+            "Origin": "https://linkareer.com",
+            "Referer": "https://linkareer.com/",
+        },
+        json={
+            "operationName": "RecruitList",
+            "variables": {
+                "filterBy": {
+                    "keyword": "백엔드",
+                    "activityTypeID": 5
+                }
+            },
+            "query": """
+            query RecruitList($filterBy: ActivityFilter) {
+              activities(filterBy: $filterBy) {
+                nodes {
+                  id
+                  title
+                  organizationName
+                }
+              }
+            }
+            """
+        },
+        impersonate="chrome120",
+        timeout=10
+    )
+    print(f"🔍 [테스트 디버그] 링커리어 응답 코드: {debug_res.status_code}")
+    print(f"🔍 [테스트 디버그] 링커리어 응답 본문: {debug_res.text}")
+
     collector = LinkareerCollector()
     jobs = collector.fetch_jobs()
     _verify_collector_result("링커리어", jobs)

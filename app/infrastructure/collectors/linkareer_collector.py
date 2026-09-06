@@ -22,7 +22,7 @@ class LinkareerCollector(JobCollectorRepository):
         return platform == "링커리어"
 
     def fetch_jobs(self) -> List[Job]:
-        # CI 환경 예외 처리 (타 수집기들과 동일 패턴)
+        # CI 환경 예외 처리
         if os.getenv("GITHUB_ACTIONS") == "true":
             print("\n[링커리어] CI 환경(GitHub Actions) 감지: 테스트용 Mock 데이터를 반환합니다.")
             return [
@@ -40,28 +40,22 @@ class LinkareerCollector(JobCollectorRepository):
 
         jobs: List[Job] = []
         try:
-            # GraphQL 쿼리: 채용 공고 목록 조회
+            # 수정된 GraphQL 쿼리: 에러 로그 분석 결과(filterBy, ActivityFilter) 반영 및 유효 필드만 조회
             graphql_query = {
                 "operationName": "RecruitList",
                 "variables": {
-                    "filter": {
+                    "filterBy": {
                         "keyword": "백엔드",
                         "activityTypeID": 5  # 채용 공고
-                    },
-                    "page": 1,
-                    "pageSize": 30
+                    }
                 },
                 "query": """
-                query RecruitList($filter: ActivityFilterInput, $page: Int, $pageSize: Int) {
-                  activities(filter: $filter, page: $page, pageSize: $pageSize) {
+                query RecruitList($filterBy: ActivityFilter) {
+                  activities(filterBy: $filterBy) {
                     nodes {
                       id
                       title
                       organizationName
-                      address
-                      recruitExperience
-                      deadline
-                      url
                     }
                   }
                 }
@@ -91,15 +85,12 @@ class LinkareerCollector(JobCollectorRepository):
 
                     title = str(item.get("title") or "제목 없음").strip()
                     company = str(item.get("organizationName") or "기업명 미상").strip()
-                    location = str(item.get("address") or "상세 참조").strip()
 
-                    exp_info = item.get("recruitExperience")
-                    req_exp = str(exp_info).strip() if exp_info else "경력 무관"
-
-                    deadline_info = item.get("deadline")
-                    deadline = str(deadline_info).strip() if deadline_info else "상시 채용"
-
-                    job_url = str(item.get("url") or f"https://linkareer.com/activity/{job_id}").strip()
+                    # 상세 필드가 없는 경우 기본값 및 ID 기반 URL 생성
+                    location = "상세 참조"
+                    req_exp = "경력 무관"
+                    deadline = "상시 채용"
+                    job_url = f"https://linkareer.com/activity/{job_id}"
 
                     jobs.append(Job(
                         id=job_id,
@@ -115,6 +106,7 @@ class LinkareerCollector(JobCollectorRepository):
                 print(f"[링커리어] 수집 완료: {len(jobs)}건")
             else:
                 print(f"[링커리어] API 응답 에러 (Status Code: {res.status_code})")
+                print(f"[링커리어] 에러 응답 내용: {res.text}")
 
         except Exception as e:
             print(f"[링커리어] 수집 오류: {e}")
