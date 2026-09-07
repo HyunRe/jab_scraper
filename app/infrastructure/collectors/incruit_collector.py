@@ -1,4 +1,6 @@
 import os
+from datetime import datetime
+import re
 from typing import List
 from bs4 import BeautifulSoup
 from curl_cffi import requests
@@ -19,6 +21,42 @@ class IncruitCollector(JobCollectorRepository):
 
     def supports(self, platform: str) -> bool:
         return platform == "인크루트"
+
+    def _format_deadline(self, deadline_str: str) -> str:
+        """마감일 문자열을 '~월/일(요일)' 형식으로 파싱 및 변환"""
+        if not deadline_str:
+            return "상시 채용"
+
+        cleaned = deadline_str.strip()
+
+        # 상대 시간 표현(예: '3일 전', '2시간 전')이나 불필요한 문구 처리
+        if any(keyword in cleaned for keyword in ["전", "일 전", "시간 전", "분 전"]):
+            return ""
+
+        if "상시" in cleaned or "채용시" in cleaned or "채용 시" in cleaned or "9999" in cleaned:
+            return "상시 채용"
+
+        try:
+            # 연도가 포함된 형식 (예: 2026-04-15, 2026.04.15)
+            match_full = re.search(r'(\d{4})[./-](\d{1,2})[./-](\d{1,2})', cleaned)
+            if match_full:
+                year, month, day = map(int, match_full.groups())
+                dt = datetime(year, month, day)
+                weekdays = ['월', '화', '수', '목', '금', '토', '일']
+                return f"~{dt.month}/{dt.day}({weekdays[dt.weekday()]})"
+
+            # 월/일 형식 또는 날짜 형태 (예: 04/15, 4월 15일)
+            match_md = re.search(r'(\d{1,2})[./월]\s*(\d{1,2})일?', cleaned)
+            if match_md:
+                month, day = map(int, match_md.groups())
+                current_year = datetime.now().year
+                dt = datetime(current_year, month, day)
+                weekdays = ['월', '화', '수', '목', '금', '토', '일']
+                return f"~{dt.month}/{dt.day}({weekdays[dt.weekday()]})"
+        except Exception:
+            pass
+
+        return cleaned if cleaned else "상시 채용"
 
     def fetch_jobs(self) -> List[Job]:
         # CI 환경 예외 처리 (사람인/원티드/캐치와 동일 패턴)
@@ -90,9 +128,10 @@ class IncruitCollector(JobCollectorRepository):
                     location = cond_spans[0] if len(cond_spans) > 0 else "상세 참조"
                     experience = cond_spans[1] if len(cond_spans) > 1 else "경력 무관"
 
-                    # 마감일 추출
+                    # 마감일 추출 및 포맷 통일 적용
                     deadline_elem = item.select_one("div.cell_last div.cl_btm > span:nth-of-type(1)")
-                    deadline = deadline_elem.text.strip() if deadline_elem else "상시 채용"
+                    raw_deadline = deadline_elem.text.strip() if deadline_elem else ""
+                    deadline = self._format_deadline(raw_deadline)
 
                     jobs.append(Job(
                         id=job_id or "0",

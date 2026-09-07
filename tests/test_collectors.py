@@ -1,5 +1,6 @@
 import pytest
 from curl_cffi import requests
+import re
 
 # 기존 수집기
 from app.infrastructure.collectors.wanted_collector import WantedCollector
@@ -29,11 +30,19 @@ def _verify_collector_result(collector_name: str, jobs: list):
         else:
             print(f"✅ [{collector_name}] 수집 성공: {len(jobs)}건")
             first_job = jobs[0]
-            print(f"  └ 첫번째 공고: {first_job.company} - {first_job.title} ({first_job.url})")
+            # 마감일(deadline) 정보 확인을 위해 로그 출력 추가
+            print(
+                f"  └ 첫번째 공고: {first_job.company} - {first_job.title} | 마감일: '{first_job.deadline}' ({first_job.url})")
 
             assert first_job.company, f"[{collector_name}] 회사명이 비어있습니다."
             assert first_job.title, f"[{collector_name}] 공고 제목이 비어있습니다."
             assert first_job.url, f"[{collector_name}] 공고 URL이 비어있습니다."
+
+            # 마감일 포맷 검증 (~M/D(요일) 패턴 또는 상시 채용/빈값)
+            deadline_pattern = r'^(~\d{1,2}/\d{1,2}\([월화수목금토일]\)|상시 채용|)$'
+            assert re.match(deadline_pattern, first_job.deadline), \
+                f"[{collector_name}] 마감일 포맷 불일치: '{first_job.deadline}'"
+
     except AssertionError as e:
         print(f"❌ [{collector_name}] 검증 실패: {e}")
         raise e
@@ -87,6 +96,13 @@ def test_catch_collector_real_fetch():
     jobs = collector.fetch_jobs()
     _verify_collector_result("캐치", jobs)
 
+    # 올바른 상세페이지 경로 (/RecruitInfoDetails/) 검증
+    if jobs:
+        first_job = jobs[0]
+        assert "/RecruitInfoDetails/" in first_job.url, \
+            f"[캐치] URL 포맷 오류 (404 원인): '{first_job.url}' -> '/RecruitInfoDetails/' 형태여야 합니다."
+        print(f"🔍 [디버그] 캐치 정상 URL 확인: {first_job.url}")
+
 
 def test_incruit_collector_real_fetch():
     print("\n[TEST START] 인크루트 수집기 테스트 시작")
@@ -105,11 +121,10 @@ def test_jobplanet_collector_real_fetch():
 def test_linkareer_collector_real_fetch():
     print("\n[TEST START] 링커리어 수집기 테스트 시작")
 
-    # 테스트 코드 내 디버그 요청 부분도 수정
     debug_res = requests.post(
         "https://api.linkareer.com/graphql",
         headers={
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Content-Type": "application/json",
             "Device": "web",
             "Origin": "https://linkareer.com",
@@ -119,8 +134,8 @@ def test_linkareer_collector_real_fetch():
             "operationName": "RecruitList",
             "variables": {
                 "filterBy": {
-                    "keyword": "백엔드",
-                    "activityTypeID": 5
+                    "activityTypeID": 5,
+                    "industryCategoryIDs": [5]
                 }
             },
             "query": """
@@ -138,8 +153,17 @@ def test_linkareer_collector_real_fetch():
         impersonate="chrome120",
         timeout=10
     )
-    print(f"🔍 [테스트 디버그] 링커리어 응답 코드: {debug_res.status_code}")
-    print(f"🔍 [테스트 디버그] 링커리어 응답 본문: {debug_res.text}")
+    print(f"🔍 [디버그] 링커리어 응답 코드: {debug_res.status_code}")
+
+    debug_body = debug_res.json() if debug_res.status_code == 200 else {}
+    if "errors" in debug_body:
+        pytest.fail(f"[링커리어] GraphQL 스키마 에러: {debug_body['errors']}")
+
+    raw_nodes = debug_body.get("data", {}).get("activities", {}).get("nodes", [])
+    print(f"🔍 [디버그] 원시 수집 건수: {len(raw_nodes)}건")
+    if raw_nodes:
+        sample = raw_nodes[0]
+        print(f"🔍 [디버그] 샘플 노드: id={sample.get('id')} | title={sample.get('title')}")
 
     collector = LinkareerCollector()
     jobs = collector.fetch_jobs()

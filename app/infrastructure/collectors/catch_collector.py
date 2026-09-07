@@ -1,4 +1,6 @@
 import os
+from datetime import datetime
+import re
 from typing import List
 from bs4 import BeautifulSoup
 from curl_cffi import requests
@@ -23,8 +25,50 @@ class CatchCollector(JobCollectorRepository):
     def supports(self, platform: str) -> bool:
         return platform == "캐치"
 
+    def _format_deadline(self, deadline_str: str) -> str:
+        """마감일 문자열을 '~월/일(요일)' 또는 '상시 채용' 형식으로 변환"""
+        if not deadline_str:
+            return "상시 채용"
+
+        cleaned = deadline_str.strip()
+
+        # 상대 시간 표현이나 불필요한 문구 처리
+        if any(keyword in cleaned for keyword in ["전", "일 전", "시간 전", "분 전"]):
+            return ""
+
+        if "상시" in cleaned or "채용시" in cleaned or "채용 시" in cleaned or "9999" in cleaned:
+            return "상시 채용"
+
+        try:
+            # ISO 8601 포맷 (예: 2026-11-06T14:59:59.000Z)
+            if "T" in cleaned:
+                dt = datetime.fromisoformat(cleaned.replace("Z", "+00:00"))
+                weekdays = ['월', '화', '수', '목', '금', '토', '일']
+                return f"~{dt.month}/{dt.day}({weekdays[dt.weekday()]})"
+
+            # 연도가 포함된 일반 날짜 포맷 (예: 2026-04-15 또는 2026.04.15)
+            match_full = re.search(r'(\d{4})[./-](\d{1,2})[./-](\d{1,2})', cleaned)
+            if match_full:
+                year, month, day = map(int, match_full.groups())
+                dt = datetime(year, month, day)
+                weekdays = ['월', '화', '수', '목', '금', '토', '일']
+                return f"~{dt.month}/{dt.day}({weekdays[dt.weekday()]})"
+
+            # 월/일만 있는 형식 (예: 04-15, 04/15)
+            match_md = re.search(r'(\d{1,2})[./-](\d{1,2})', cleaned)
+            if match_md:
+                month, day = map(int, match_md.groups())
+                current_year = datetime.now().year
+                dt = datetime(current_year, month, day)
+                weekdays = ['월', '화', '수', '목', '금', '토', '일']
+                return f"~{dt.month}/{dt.day}({weekdays[dt.weekday()]})"
+        except Exception:
+            pass
+
+        return cleaned if cleaned else "상시 채용"
+
     def fetch_jobs(self) -> List[Job]:
-        # CI 환경 예외 처리 (사람인/원티드와 동일 패턴)
+        # CI 환경 예외 처리
         if os.getenv("GITHUB_ACTIONS") == "true":
             print("\n[캐치] CI 환경(GitHub Actions) 감지: 테스트용 Mock 데이터를 반환합니다.")
             return [
@@ -33,7 +77,7 @@ class CatchCollector(JobCollectorRepository):
                     platform="캐치",
                     title="[CI Mock] 캐치 백엔드 개발자",
                     company="테스트 기업",
-                    url="https://www.catch.co.kr/NCS/RecruitInfoDetail/mock_1",
+                    url="https://www.catch.co.kr/NCS/RecruitInfoDetails/mock_1",
                     location="서울 강남구",
                     required_experience="경력 무관",
                     deadline="상시 채용",
@@ -86,14 +130,16 @@ class CatchCollector(JobCollectorRepository):
                     location = str(item.get("WorkArea") or "상세 참조").strip()
 
                     # 경력 조건 매핑
-                    career_code = str(item.get("CareerGubunCode") or "")
+                    career_code = str(item.get("CareerGubunCode") or item.get("ExperienceText") or "")
                     req_exp = career_code if career_code else "경력 무관"
 
-                    # 마감일 매핑
-                    end_date = str(item.get("ApplyEndDatetime") or "").strip()
-                    deadline = end_date.split("T")[0] if end_date and "9999" not in end_date else "상시 채용"
+                    # 마감일 (ApplyEndCode가 '상시채용'이면 이를 우선 사용, 아닐 경우 ApplyEndDatetime 파싱)
+                    apply_end_code = str(item.get("ApplyEndCode") or "").strip()
+                    raw_deadline = apply_end_code if apply_end_code == "상시채용" else str(item.get("ApplyEndDatetime") or "").strip()
+                    deadline = self._format_deadline(raw_deadline)
 
-                    job_url = f"https://www.catch.co.kr/NCS/RecruitInfoDetail/{job_id}"
+                    # 캐치 웹 정식 상세 페이지 URL 규격 (RecruitInfoDetails + 복수 s)
+                    job_url = f"https://www.catch.co.kr/NCS/RecruitInfoDetails/{job_id}"
 
                     jobs.append(Job(
                         id=job_id,

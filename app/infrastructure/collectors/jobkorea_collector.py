@@ -1,6 +1,8 @@
-import requests
+from datetime import datetime
+import re
 from typing import List
 from bs4 import BeautifulSoup
+import requests
 
 from app.domain.models import Job
 from app.domain.interfaces import JobCollectorRepository
@@ -12,12 +14,48 @@ class JobKoreaCollector(JobCollectorRepository):
             "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Referer": "https://www.jobkorea.co.kr/Search/",
             "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
-            "X-Requested-With": "XMLHttpRequest"
+            "X-Requested-With": "XMLHttpRequest",
         }
         self.url = "https://www.jobkorea.co.kr/Recruit/Home/_GI_List/"
 
     def supports(self, platform: str) -> bool:
         return platform == "잡코리아"
+
+    def _format_deadline(self, deadline_str: str) -> str:
+        """마감일 문자열을 '~월/일(요일)' 형식으로 파싱 및 변환"""
+        if not deadline_str:
+            return "상시 채용"
+
+        cleaned = deadline_str.strip()
+
+        # 상대 시간 표현(예: '3일 전', '2시간 전')이나 불필요한 문구 처리
+        if any(keyword in cleaned for keyword in ["전", "일 전", "시간 전", "분 전"]):
+            return ""
+
+        if "상시" in cleaned or "채용시" in cleaned or "채용 시" in cleaned or "9999" in cleaned:
+            return "상시 채용"
+
+        try:
+            # 연도가 포함된 형식 (예: 2026-04-15 또는 2026.04.15)
+            match_full = re.search(r'(\d{4})[./-](\d{1,2})[./-](\d{1,2})', cleaned)
+            if match_full:
+                year, month, day = map(int, match_full.groups())
+                dt = datetime(year, month, day)
+                weekdays = ['월', '화', '수', '목', '금', '토', '일']
+                return f"~{dt.month}/{dt.day}({weekdays[dt.weekday()]})"
+
+            # 월/일만 있는 형식 (예: 04.15, 4/15, 4월 15일)
+            match_md = re.search(r'(\d{1,2})[./월]\s*(\d{1,2})일?', cleaned)
+            if match_md:
+                month, day = map(int, match_md.groups())
+                current_year = datetime.now().year
+                dt = datetime(current_year, month, day)
+                weekdays = ['월', '화', '수', '목', '금', '토', '일']
+                return f"~{dt.month}/{dt.day}({weekdays[dt.weekday()]})"
+        except Exception:
+            pass
+
+        return cleaned if cleaned else "상시 채용"
 
     def fetch_jobs(self) -> List[Job]:
         jobs = []
@@ -32,7 +70,7 @@ class JobKoreaCollector(JobCollectorRepository):
             "tabindex": "0",
             "onePick": "0",
             "confirm": "0",
-            "profile": "0"
+            "profile": "0",
         }
 
         try:
@@ -69,22 +107,29 @@ class JobKoreaCollector(JobCollectorRepository):
                     ]
 
                     experience = etc_cells[0] if len(etc_cells) > 0 else "경력 정보 없음"
-                    location = etc_cells[2] if len(etc_cells) > 2 else (
-                        etc_cells[1] if len(etc_cells) > 1 else "지역 정보 없음")
+                    location = (
+                        etc_cells[2]
+                        if len(etc_cells) > 2
+                        else (etc_cells[1] if len(etc_cells) > 1 else "지역 정보 없음")
+                    )
 
+                    # 마감일 추출 및 포맷 통일 적용
                     deadline_elem = row.select_one("td.odd span.date")
-                    deadline = deadline_elem.text.strip() if deadline_elem else "상시 채용"
+                    raw_deadline = deadline_elem.text.strip() if deadline_elem else ""
+                    deadline = self._format_deadline(raw_deadline)
 
-                    jobs.append(Job(
-                        id=job_id,
-                        platform="잡코리아",
-                        title=title,
-                        company=company,
-                        url=job_url,
-                        location=location,
-                        required_experience=experience,
-                        deadline=deadline
-                    ))
+                    jobs.append(
+                        Job(
+                            id=job_id,
+                            platform="잡코리아",
+                            title=title,
+                            company=company,
+                            url=job_url,
+                            location=location,
+                            required_experience=experience,
+                            deadline=deadline,
+                        )
+                    )
 
                 print(f"[잡코리아] 수집 완료: {len(jobs)}건")
             else:

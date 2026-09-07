@@ -1,3 +1,5 @@
+from datetime import datetime
+import re
 import requests
 from typing import List
 from app.domain.models import Job
@@ -14,6 +16,42 @@ class RallitCollector(JobCollectorRepository):
 
     def supports(self, platform: str) -> bool:
         return platform == "랠릿"
+
+    def _format_deadline(self, deadline_str: str) -> str:
+        """마감일 문자열을 '~월/일(요일)' 형식으로 파싱 및 변환"""
+        if not deadline_str:
+            return "상시 채용"
+
+        cleaned = deadline_str.strip()
+
+        # 상대 시간 표현(예: '3일 전', '2시간 전')이나 불필요한 문구 처리
+        if any(keyword in cleaned for keyword in ["전", "일 전", "시간 전", "분 전"]):
+            return ""
+
+        if "상시" in cleaned or "채용시" in cleaned or "채용 시" in cleaned or "9999" in cleaned:
+            return "상시 채용"
+
+        try:
+            # 연도가 포함된 형식 (예: 2026-04-15T00:00:00 또는 2026-04-15 또는 2026.04.15)
+            match_full = re.search(r'(\d{4})[./-](\d{1,2})[./-](\d{1,2})', cleaned)
+            if match_full:
+                year, month, day = map(int, match_full.groups())
+                dt = datetime(year, month, day)
+                weekdays = ['월', '화', '수', '목', '금', '토', '일']
+                return f"~{dt.month}/{dt.day}({weekdays[dt.weekday()]})"
+
+            # 월/일만 있는 형식 (예: 04.15, 4/15, 4월 15일)
+            match_md = re.search(r'(\d{1,2})[./월]\s*(\d{1,2})일?', cleaned)
+            if match_md:
+                month, day = map(int, match_md.groups())
+                current_year = datetime.now().year
+                dt = datetime(current_year, month, day)
+                weekdays = ['월', '화', '수', '목', '금', '토', '일']
+                return f"~{dt.month}/{dt.day}({weekdays[dt.weekday()]})"
+        except Exception:
+            pass
+
+        return cleaned if cleaned else "상시 채용"
 
     def fetch_jobs(self) -> List[Job]:
         jobs = []
@@ -54,7 +92,9 @@ class RallitCollector(JobCollectorRepository):
 
                     if any(kw.lower() in search_text for kw in keywords):
                         ended_at = str(item.get("endedAt") or "")
-                        deadline = "상시 채용" if not ended_at or ended_at.startswith("9999") else ended_at
+
+                        # 마감일 추출 및 포맷 통일 적용
+                        deadline = self._format_deadline(ended_at)
 
                         # 1. location 방어 로직 (None / null / 빈 문자열 대응)
                         address_region = item.get("addressRegion")

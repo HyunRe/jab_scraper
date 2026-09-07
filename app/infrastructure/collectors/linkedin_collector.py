@@ -1,4 +1,6 @@
 import os
+from datetime import datetime
+import re
 from typing import List
 from bs4 import BeautifulSoup
 from curl_cffi import requests
@@ -20,6 +22,42 @@ class LinkedinCollector(JobCollectorRepository):
 
     def supports(self, platform: str) -> bool:
         return platform == "링크드인"
+
+    def _format_deadline(self, deadline_str: str) -> str:
+        """마감일/작성일 문자열을 '~월/일(요일)' 형식으로 파싱 및 변환"""
+        if not deadline_str:
+            return "상시 채용"
+
+        cleaned = deadline_str.strip()
+
+        # relative time(영문/한글) 표현(예: '1 week ago', '3 days ago', '3일 전', '2시간 전')이나 불필요 문구 제거
+        if any(keyword in cleaned.lower() for keyword in ["전", "ago", "일 전", "시간 전", "분 전"]):
+            return ""
+
+        if "상시" in cleaned or "채용시" in cleaned or "채용 시" in cleaned or "9999" in cleaned:
+            return "상시 채용"
+
+        try:
+            # 연도가 포함된 형식 (예: 2026-04-15 또는 2026.04.15)
+            match_full = re.search(r'(\d{4})[./-](\d{1,2})[./-](\d{1,2})', cleaned)
+            if match_full:
+                year, month, day = map(int, match_full.groups())
+                dt = datetime(year, month, day)
+                weekdays = ['월', '화', '수', '목', '금', '토', '일']
+                return f"~{dt.month}/{dt.day}({weekdays[dt.weekday()]})"
+
+            # 월/일만 있는 형식 (예: 04.15, 4/15, 4월 15일)
+            match_md = re.search(r'(\d{1,2})[./월]\s*(\d{1,2})일?', cleaned)
+            if match_md:
+                month, day = map(int, match_md.groups())
+                current_year = datetime.now().year
+                dt = datetime(current_year, month, day)
+                weekdays = ['월', '화', '수', '목', '금', '토', '일']
+                return f"~{dt.month}/{dt.day}({weekdays[dt.weekday()]})"
+        except Exception:
+            pass
+
+        return cleaned if cleaned else "상시 채용"
 
     def fetch_jobs(self) -> List[Job]:
         # CI 환경 예외 처리 (타 수집기들과 동일 패턴)
@@ -85,9 +123,13 @@ class LinkedinCollector(JobCollectorRepository):
                     location_elem = card.select_one("span.job-search-card__location")
                     location = location_elem.get_text(strip=True) if location_elem else "상세 참조"
 
-                    # 4. 작성일/마감일
+                    # 4. 작성일/마감일 extraction & datetime 속성 대응
                     date_elem = card.select_one("time.job-search-card__listdate, time.job-search-card__listdate--new")
-                    deadline = date_elem.get_text(strip=True) if date_elem else "상시 채용"
+                    raw_date = ""
+                    if date_elem:
+                        raw_date = str(date_elem.get("datetime") or date_elem.get_text(strip=True) or "")
+
+                    deadline = self._format_deadline(raw_date)
 
                     jobs.append(Job(
                         id=job_id,
