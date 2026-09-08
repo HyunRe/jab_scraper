@@ -141,6 +141,9 @@ class CatchCollector(JobCollectorRepository):
                     # 캐치 웹 정식 상세 페이지 URL 규격 (RecruitInfoDetails + 복수 s)
                     job_url = f"https://www.catch.co.kr/NCS/RecruitInfoDetails/{job_id}"
 
+                    # 디버그 프린트
+                    print(f"[캐치 파싱] ID: {job_id} | 기업: {company} | 제목: {title} | 경력: '{req_exp}' | 마감일: '{deadline}'")
+
                     jobs.append(Job(
                         id=job_id,
                         platform="캐치",

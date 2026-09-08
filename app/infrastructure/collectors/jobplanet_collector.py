@@ -1,6 +1,6 @@
 import os
-from datetime import datetime, timedelta
 import re
+from datetime import datetime, timedelta
 from typing import List
 from bs4 import BeautifulSoup
 from curl_cffi import requests
@@ -13,7 +13,7 @@ class JobplanetCollector(JobCollectorRepository):
     def __init__(self, headers: dict = None):
         self.api_url = "https://www.jobplanet.co.kr/api/v3/job/postings"
         self.headers = headers or {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/152.0.0.0 Safari/537.36",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
             "Accept": "application/json",
             "Referer": "https://www.jobplanet.co.kr/job",
             "jp-os-type": "web",
@@ -24,7 +24,7 @@ class JobplanetCollector(JobCollectorRepository):
         return platform == "잡플래닛"
 
     def _format_deadline(self, deadline_str: str) -> str:
-        """마감일 문자열을 '~월/일(요일)' 형식으로 파싱 및 변환"""
+        """마감일 문자열을 '~월/일(요일)' 또는 '상시 채용' 형식으로 변환"""
         if not deadline_str:
             return "상시 채용"
 
@@ -32,35 +32,36 @@ class JobplanetCollector(JobCollectorRepository):
         weekdays = ["월", "화", "수", "목", "금", "토", "일"]
         now = datetime.now()
 
-        # 1. '오늘 마감', '내일 마감' 처리
+        # 1. D-day 패턴 처리 (예: 'D-1', 'D-day', 'D-0')
+        match_dday = re.search(r"D-(day|DAY|\d+)", cleaned)
+        if match_dday:
+            d_val = match_dday.group(1).lower()
+            days_left = 0 if d_val == "day" else int(d_val)
+            target_date = now + timedelta(days=days_left)
+            return f"~{target_date.month}/{target_date.day}({weekdays[target_date.weekday()]})"
+
+        # 2. '오늘 마감', '내일 마감' 처리
         if "오늘" in cleaned:
             return f"~{now.month}/{now.day}({weekdays[now.weekday()]})"
         elif "내일" in cleaned:
             tomorrow = now + timedelta(days=1)
             return f"~{tomorrow.month}/{tomorrow.day}({weekdays[tomorrow.weekday()]})"
 
-        # 2. 기타 상대 시간 표현(예: '3일 전', '2시간 전') 처리
-        if any(
-            keyword in cleaned
-            for keyword in ["전", "일 전", "시간 전", "분 전"]
-        ):
+        # 3. 상대 시간 및 상시 채용 키워드 처리
+        if any(keyword in cleaned for keyword in ["전", "일 전", "시간 전", "분 전"]):
             return "상시 채용"
 
         if "상시" in cleaned or "채용시" in cleaned or "채용 시" in cleaned:
             return "상시 채용"
 
-        # 3. 날짜 형식 파싱 시도 (예: '2026.04.15', '04/15', '4월 15일' 등)
+        # 4. 날짜 형식 파싱 시도
         try:
-            # 연도가 포함된 형식 (예: 2026.04.15 또는 2026-04-15)
-            match_full = re.search(
-                r"(\d{4})[./-](\d{1,2})[./-](\d{1,2})", cleaned
-            )
+            match_full = re.search(r"(\d{4})[./-](\d{1,2})[./-](\d{1,2})", cleaned)
             if match_full:
                 year, month, day = map(int, match_full.groups())
                 dt = datetime(year, month, day)
                 return f"~{dt.month}/{dt.day}({weekdays[dt.weekday()]})"
 
-            # 월/일만 있는 형식 (예: 04/15 또는 4월 15일)
             match_md = re.search(r"(\d{1,2})[./월]\s*(\d{1,2})일?", cleaned)
             if match_md:
                 month, day = map(int, match_md.groups())
@@ -81,7 +82,7 @@ class JobplanetCollector(JobCollectorRepository):
                     platform="잡플래닛",
                     title="[CI Mock] 잡플래닛 백엔드 개발자",
                     company="테스트 기업",
-                    url="https://www.jobplanet.co.kr/job/postings/mock_1",
+                    url="https://www.jobplanet.co.kr/job/search?posting_ids%5B%5D=mock_1",
                     location="서울 강남구",
                     required_experience="경력 무관",
                     deadline="상시 채용",
@@ -89,80 +90,104 @@ class JobplanetCollector(JobCollectorRepository):
             ]
 
         jobs: List[Job] = []
-        try:
-            params = {
-                "occupation_level1": "",
-                "occupation_level2": "11904",  # 백엔드/개발 세부 카테고리
-                "years_of_experience": "",
-                "review_score": "",
-                "job_type": "",
-                "city": "",
-                "education_level_id": "",
-                "order_by": "aggressive",
-                "page": 1,
-                "page_size": 30
-            }
+        max_pages = 3
 
-            res = requests.get(
-                self.api_url,
-                headers=self.headers,
-                params=params,
-                impersonate="chrome120",
-                timeout=10
-            )
+        for page in range(1, max_pages + 1):
+            try:
+                params = {
+                    "query": "백엔드",  # 검색어 추가로 자체 공고 노출 비율 증가
+                    "occupation_level1": "",
+                    "occupation_level2": "11904",  # 개발/백엔드
+                    "years_of_experience": "",
+                    "review_score": "",
+                    "job_type": "",
+                    "city": "",
+                    "education_level_id": "",
+                    "order_by": "recent",  # 최신순 정렬
+                    "page": page,
+                    "page_size": 30
+                }
 
-            if res.status_code == 200:
-                json_res = res.json() if isinstance(res.json(), dict) else {}
-                recruits = json_res.get("data", {}).get("recruits", []) if isinstance(json_res.get("data"),
-                                                                                      dict) else []
+                res = requests.get(
+                    self.api_url,
+                    headers=self.headers,
+                    params=params,
+                    impersonate="chrome120",
+                    timeout=10
+                )
 
-                for item in recruits:
-                    if not isinstance(item, dict):
-                        continue
+                if res.status_code == 200:
+                    json_res = res.json() if isinstance(res.json(), dict) else {}
+                    recruits = json_res.get("data", {}).get("recruits", []) if isinstance(json_res.get("data"), dict) else []
 
-                    job_id = str(item.get("id") or "").strip()
-                    if not job_id:
-                        continue
+                    if not recruits:
+                        break
 
-                    title = str(item.get("title") or "제목 없음").strip()
+                    for item in recruits:
+                        if not isinstance(item, dict):
+                            continue
 
-                    company_info = item.get("company", {}) or {}
-                    company = str(company_info.get("name") or "기업명 미상").strip()
+                        # ========================================================
+                        # [핵심 필터링] 잡코리아 연동 및 외부 링크 공고 원천 차단
+                        # ========================================================
+                        apply_type = str(item.get("posting_apply_type") or "").lower()
+                        jobkorea_id = item.get("jobkorea_posting_id")
+                        landing_url = str(item.get("link") or item.get("landing_url") or "").lower()
 
-                    cities = item.get("cities") or []
-                    location = ", ".join(cities) if isinstance(cities, list) and cities else "상세 참조"
+                        if (
+                            apply_type in ["jobkorea_inlink", "external_link"]
+                            or jobkorea_id is not None
+                            or "jobkorea.co.kr" in landing_url
+                        ):
+                            continue
 
-                    career_text = item.get("career_text")
-                    req_exp = str(career_text).strip() if career_text else "경력 무관"
+                        job_id = str(item.get("id") or "").strip()
+                        if not job_id:
+                            continue
 
-                    # 마감일 포맷 통일 함수 적용
-                    raw_deadline = item.get("deadline_message") or item.get("due_date") or ""
-                    deadline = self._format_deadline(str(raw_deadline))
+                        title = str(item.get("title") or "제목 없음").strip()
 
-                    job_url = f"https://www.jobplanet.co.kr/job/postings/{job_id}"
+                        company_info = item.get("company", {}) or {}
+                        company = str(company_info.get("name") or "기업명 미상").strip()
 
-                    jobs.append(Job(
-                        id=job_id,
-                        platform="잡플래닛",
-                        title=title,
-                        company=company,
-                        url=job_url,
-                        location=location,
-                        required_experience=req_exp,
-                        deadline=deadline
-                    ))
+                        cities = item.get("cities") or []
+                        location = ", ".join(cities) if isinstance(cities, list) and cities else "상세 참조"
 
-                print(f"[잡플래닛] 수집 완료: {len(jobs)}건")
-            else:
-                print(f"[잡플래닛] API 응답 에러 (Status Code: {res.status_code})")
+                        career_text = item.get("career_text")
+                        req_exp = str(career_text).strip() if career_text else "경력 무관"
 
-        except Exception as e:
-            print(f"[잡플래닛] 수집 오류: {e}")
+                        raw_deadline = item.get("deadline_message") or item.get("end_at") or ""
+                        deadline = self._format_deadline(str(raw_deadline))
 
+                        # 잡플래닛 정식 상세 URL 규격
+                        job_url = f"https://www.jobplanet.co.kr/job/search?posting_ids%5B%5D={job_id}"
+
+                        jobs.append(Job(
+                            id=job_id,
+                            platform="잡플래닛",
+                            title=title,
+                            company=company,
+                            url=job_url,
+                            location=location,
+                            required_experience=req_exp,
+                            deadline=deadline
+                        ))
+
+                    if len(jobs) >= 20:
+                        break
+                else:
+                    print(f"[잡플래닛] API 응답 에러 (Status Code: {res.status_code})")
+                    break
+
+            except Exception as e:
+                print(f"[잡플래닛] 수집 오류: {e}")
+                break
+
+        print(f"[잡플래닛] 수집 완료: 총 {len(jobs)}건 (잡코리아 연동 공고 제외됨)")
         return jobs
 
     def fetch_job_detail(self, job: Job) -> str:
-        """잡플래닛 공고 상세 정보 조회"""
+        """잡플래닛 공고 상세 내용 조회"""
         try:
             res = requests.get(
                 job.url,

@@ -27,6 +27,7 @@ from app.domain.models import Job
 
 def is_target_job(item: Dict[str, Any] | Job, deduplicator: Optional[JobDeduplicator] = None) -> bool:
     """1차 파이썬 필터링: 수도권 지역, 3년 이하/신입 타겟 및 마감일 미경과 공고 필터링"""
+    platform = item.get("platform", "") if isinstance(item, dict) else getattr(item, "platform", "")
     loc = item.get("location", "") if isinstance(item, dict) else getattr(item, "location", "")
     exp = item.get("required_experience", "") if isinstance(item, dict) else getattr(item, "required_experience", "")
     title = item.get("title", "") if isinstance(item, dict) else getattr(item, "title", "")
@@ -34,6 +35,8 @@ def is_target_job(item: Dict[str, Any] | Job, deduplicator: Optional[JobDeduplic
 
     # 1. 마감일 검증 (deduplicator 파서 활용)
     if deduplicator and deduplicator.is_expired_deadline(deadline):
+        if platform == "캐치":
+            print(f"[캐치 필터 탈락 - 마감일 만료] {title} | 마감일: '{deadline}'")
         return False
 
     # 2. 지역 조건 (수도권 주요 시/도 및 거점 IT 단지/구 단위 포함)
@@ -43,6 +46,8 @@ def is_target_job(item: Dict[str, Any] | Job, deduplicator: Optional[JobDeduplic
         "상세 참조", "지역 정보 없음", "전체", "대한민국", ""
     ]
     if not any(r in loc for r in allowed_regions):
+        if platform == "캐치":
+            print(f"[캐치 필터 탈락 - 지역 부적합] {title} | 지역: '{loc}'")
         return False
 
     # 3. 경력 조건 (신입 및 3년 이하, 1년 이하 타겟)
@@ -52,7 +57,7 @@ def is_target_job(item: Dict[str, Any] | Job, deduplicator: Optional[JobDeduplic
     allow_patterns = [
         r"신입", r"주니어", r"junior",
         r"1\s*년\s*이하", r"1\s*년", r"2\s*년", r"3\s*년",
-        r"인턴", r"경력\s*무관", r"무관"
+        r"인턴", r"경력\s*무관", r"무관", r"경력"
     ]
     is_allowed = any(re.search(pat, exp_text) for pat in allow_patterns)
 
@@ -70,7 +75,17 @@ def is_target_job(item: Dict[str, Any] | Job, deduplicator: Optional[JobDeduplic
             # 신입/주니어/1년 이하 키워드가 포함되어 있다면 거부 패턴을 무시하고 통과
             if is_allowed:
                 continue
+            if platform == "캐치":
+                print(f"[캐치 필터 탈락 - 거부 패턴 매칭] {title} | 경력: '{exp}'")
             return False
+
+    if not is_allowed:
+        if platform == "캐치":
+            print(f"[캐치 필터 탈락 - 허용 패턴 미매칭] {title} | 경력: '{exp}'")
+        return False
+
+    if platform == "캐치":
+        print(f"[캐치 필터 통과 ✅] {title} | 경력: '{exp}' | 마감일: '{deadline}'")
 
     return True
 

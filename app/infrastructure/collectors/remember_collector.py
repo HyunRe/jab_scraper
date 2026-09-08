@@ -117,7 +117,16 @@ class RememberCollector(JobCollectorRepository):
                     org = item.get("organization", {}) or {}
                     company = str(org.get("name") or "기업명 미상").strip()
 
-                    location = str(item.get("normalized_address") or "상세 참조").strip()
+                    addr_data = item.get("normalized_address")
+                    if isinstance(addr_data, dict):
+                        level1 = str(addr_data.get("level1") or "").strip()
+                        level2 = str(addr_data.get("level2") or "").strip()
+                        # 예: 서울 + 강남구 -> "서울 강남구" (공백으로 결합)
+                        location = " ".join([l for l in [level1, level2] if l]).strip()
+                        if not location:
+                            location = "상세 참조"
+                    else:
+                        location = str(addr_data or "상세 참조").strip()
 
                     min_exp = item.get("min_experience")
                     max_exp = item.get("max_experience")

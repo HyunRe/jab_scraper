@@ -111,11 +111,39 @@ def test_incruit_collector_real_fetch():
     _verify_collector_result("인크루트", jobs)
 
 
+import re
+import pytest
+from app.infrastructure.collectors.jobplanet_collector import JobplanetCollector
+
+
 def test_jobplanet_collector_real_fetch():
     print("\n[TEST START] 잡플래닛 수집기 테스트 시작")
     collector = JobplanetCollector()
     jobs = collector.fetch_jobs()
-    _verify_collector_result("잡플래닛", jobs)
+
+    # 0. 최소 수집 건수 검증 (SKIPPED 방지 및 수집 성공 강제)
+    assert len(jobs) > 0, "[잡플래닛] 잡코리아 제외 후 수집된 순수 공고가 0건입니다. (API 요청 파라미터 점검 필요)"
+
+    # 1. URL 포맷 경로 (/job/search?posting_ids%5B%5D=) 검증
+    first_job = jobs[0]
+    assert "/job/search?posting_ids%5B%5D=" in first_job.url, \
+        f"[잡플래닛] URL 포맷 오류: '{first_job.url}' -> '/job/search?posting_ids%5B%5D=' 형태여야 합니다."
+    print(f"🔍 [디버그] 잡플래닛 정상 URL 확인: {first_job.url}")
+
+    # 2. 마감일 D-day 파싱 결과 검증 (~M/D(요일) 패턴 또는 상시 채용)
+    deadline_pattern = r'^(~\d{1,2}/\d{1,2}\([월화수목금토일]\)|상시 채용)$'
+    for job in jobs:
+        assert re.match(deadline_pattern, job.deadline), \
+            f"[잡플래닛] 마감일 D-day 파싱 오류: '{job.deadline}'"
+    print(f"🔍 [디버그] 수집된 공고 {len(jobs)}건의 마감일 포맷 파싱 정상 확인")
+
+    # 3. 잡코리아 연동 공고 제외 검증
+    for job in jobs:
+        assert "jobkorea" not in job.url.lower(), \
+            f"[잡플래닛] 잡코리아 외부 링크 포함 에러: {job.url}"
+        assert "잡코리아" not in job.title, \
+            f"[잡플래닛] 잡코리아 공고 미제외 에러: {job.title}"
+    print(f"🔍 [디버그] 잡코리아 연동 공고 제외 상태 정상 확인")
 
 
 def test_linkareer_collector_real_fetch():
