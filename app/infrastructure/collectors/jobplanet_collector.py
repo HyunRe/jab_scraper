@@ -32,7 +32,14 @@ class JobplanetCollector(JobCollectorRepository):
         weekdays = ["월", "화", "수", "목", "금", "토", "일"]
         now = datetime.now()
 
-        # 1. D-day 패턴 처리 (예: 'D-1', 'D-day', 'D-0')
+        # 1. '오늘', '내일', '모레' 등 구체적인 날짜 표현 우선 처리
+        if "오늘" in cleaned:
+            return f"~{now.month}/{now.day}({weekdays[now.weekday()]})"
+        if "내일" in cleaned:
+            tomorrow = now + timedelta(days=1)
+            return f"~{tomorrow.month}/{tomorrow.day}({weekdays[tomorrow.weekday()]})"
+
+        # 2. D-day 패턴 처리 (예: 'D-1', 'D-day', 'D-0')
         match_dday = re.search(r"D-(day|DAY|\d+)", cleaned)
         if match_dday:
             d_val = match_dday.group(1).lower()
@@ -40,18 +47,11 @@ class JobplanetCollector(JobCollectorRepository):
             target_date = now + timedelta(days=days_left)
             return f"~{target_date.month}/{target_date.day}({weekdays[target_date.weekday()]})"
 
-        # 2. '오늘 마감', '내일 마감' 처리
-        if "오늘" in cleaned:
-            return f"~{now.month}/{now.day}({weekdays[now.weekday()]})"
-        elif "내일" in cleaned:
-            tomorrow = now + timedelta(days=1)
-            return f"~{tomorrow.month}/{tomorrow.day}({weekdays[tomorrow.weekday()]})"
-
-        # 3. 상대 시간 및 상시 채용 키워드 처리
+        # 3. 상대 시간 및 상시 채용 키워드 처리 ('9999' 포함)
         if any(keyword in cleaned for keyword in ["전", "일 전", "시간 전", "분 전"]):
             return "상시 채용"
 
-        if "상시" in cleaned or "채용시" in cleaned or "채용 시" in cleaned:
+        if any(keyword in cleaned for keyword in ["상시", "채용시", "채용 시", "9999"]):
             return "상시 채용"
 
         # 4. 날짜 형식 파싱 시도
@@ -62,7 +62,7 @@ class JobplanetCollector(JobCollectorRepository):
                 dt = datetime(year, month, day)
                 return f"~{dt.month}/{dt.day}({weekdays[dt.weekday()]})"
 
-            match_md = re.search(r"(\d{1,2})[./월]\s*(\d{1,2})일?", cleaned)
+            match_md = re.search(r"(\d{1,2})[./월-]\s*(\d{1,2})일?", cleaned)
             if match_md:
                 month, day = map(int, match_md.groups())
                 dt = datetime(now.year, month, day)
@@ -161,6 +161,9 @@ class JobplanetCollector(JobCollectorRepository):
 
                         # 잡플래닛 정식 상세 URL 규격
                         job_url = f"https://www.jobplanet.co.kr/job/search?posting_ids%5B%5D={job_id}"
+
+                        # 디버그 프린트
+                        print(f"[잡플래닛 파싱] ID: {job_id} | 기업: {company} | 제목: {title} | 경력: '{req_exp}' | 마감일: '{deadline}'")
 
                         jobs.append(Job(
                             id=job_id,

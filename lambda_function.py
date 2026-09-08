@@ -33,10 +33,12 @@ def is_target_job(item: Dict[str, Any] | Job, deduplicator: Optional[JobDeduplic
     title = item.get("title", "") if isinstance(item, dict) else getattr(item, "title", "")
     deadline = item.get("deadline", "") if isinstance(item, dict) else getattr(item, "deadline", "")
 
+    debug_platforms = ("캐치", "잡플래닛")
+
     # 1. 마감일 검증 (deduplicator 파서 활용)
     if deduplicator and deduplicator.is_expired_deadline(deadline):
-        if platform == "캐치":
-            print(f"[캐치 필터 탈락 - 마감일 만료] {title} | 마감일: '{deadline}'")
+        if platform in debug_platforms:
+            print(f"[{platform} 필터 탈락 - 마감일 만료] {title} | 마감일: '{deadline}'")
         return False
 
     # 2. 지역 조건 (수도권 주요 시/도 및 거점 IT 단지/구 단위 포함)
@@ -46,8 +48,8 @@ def is_target_job(item: Dict[str, Any] | Job, deduplicator: Optional[JobDeduplic
         "상세 참조", "지역 정보 없음", "전체", "대한민국", ""
     ]
     if not any(r in loc for r in allowed_regions):
-        if platform == "캐치":
-            print(f"[캐치 필터 탈락 - 지역 부적합] {title} | 지역: '{loc}'")
+        if platform in debug_platforms:
+            print(f"[{platform} 필터 탈락 - 지역 부적합] {title} | 지역: '{loc}'")
         return False
 
     # 3. 경력 조건 (신입 및 3년 이하, 1년 이하 타겟)
@@ -75,17 +77,17 @@ def is_target_job(item: Dict[str, Any] | Job, deduplicator: Optional[JobDeduplic
             # 신입/주니어/1년 이하 키워드가 포함되어 있다면 거부 패턴을 무시하고 통과
             if is_allowed:
                 continue
-            if platform == "캐치":
-                print(f"[캐치 필터 탈락 - 거부 패턴 매칭] {title} | 경력: '{exp}'")
+            if platform in debug_platforms:
+                print(f"[{platform} 필터 탈락 - 거부 패턴 매칭] {title} | 경력: '{exp}'")
             return False
 
     if not is_allowed:
-        if platform == "캐치":
-            print(f"[캐치 필터 탈락 - 허용 패턴 미매칭] {title} | 경력: '{exp}'")
+        if platform in debug_platforms:
+            print(f"[{platform} 필터 탈락 - 허용 패턴 미매칭] {title} | 경력: '{exp}'")
         return False
 
-    if platform == "캐치":
-        print(f"[캐치 필터 통과 ✅] {title} | 경력: '{exp}' | 마감일: '{deadline}'")
+    if platform in debug_platforms:
+        print(f"[{platform} 필터 통과 ✅] {title} | 경력: '{exp}' | 마감일: '{deadline}'")
 
     return True
 

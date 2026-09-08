@@ -1,8 +1,7 @@
 import os
-from datetime import datetime
+from datetime import datetime, timedelta
 import re
 from typing import List
-from bs4 import BeautifulSoup
 from curl_cffi import requests
 
 from app.domain.models import Job
@@ -24,41 +23,55 @@ class ZighangCollector(JobCollectorRepository):
         return platform == "직행"
 
     def _format_deadline(self, deadline_str: str) -> str:
-        """마감일 문자열을 '~월/일(요일)' 형식으로 파싱 및 변환"""
+        """마감일 문자열을 '~월/일(요일)' 또는 '상시 채용' 형식으로 변환"""
         if not deadline_str:
             return "상시 채용"
 
         cleaned = deadline_str.strip()
+        weekdays = ["월", "화", "수", "목", "금", "토", "일"]
+        now = datetime.now()
 
-        # 상대 시간 표현(예: '3일 전', '2시간 전')이나 불필요한 문구 처리
+        # 1. '오늘', '내일' 마감 키워드 처리
+        if "오늘" in cleaned:
+            return f"~{now.month}/{now.day}({weekdays[now.weekday()]})"
+        if "내일" in cleaned:
+            tomorrow = now + timedelta(days=1)
+            return f"~{tomorrow.month}/{tomorrow.day}({weekdays[tomorrow.weekday()]})"
+
+        # 2. D-day 패턴 처리 (예: 'D-1', 'D-day', 'D-0')
+        match_dday = re.search(r"D-(day|DAY|\d+)", cleaned)
+        if match_dday:
+            d_val = match_dday.group(1).lower()
+            days_left = 0 if d_val == "day" else int(d_val)
+            target_date = now + timedelta(days=days_left)
+            return f"~{target_date.month}/{target_date.day}({weekdays[target_date.weekday()]})"
+
+        # 3. 상대 시간 및 상시 채용 키워드 처리
         if any(keyword in cleaned for keyword in ["전", "일 전", "시간 전", "분 전"]):
-            return ""
-
-        if "상시" in cleaned or "채용시" in cleaned or "채용 시" in cleaned or "9999" in cleaned:
             return "상시 채용"
 
+        if any(keyword in cleaned for keyword in ["상시", "채용시", "채용 시", "9999"]):
+            return "상시 채용"
+
+        # 4. 날짜 형식 파싱 시도 (ISO 타임스탬프 포함)
         try:
             # 연도가 포함된 형식 (예: 2026-04-15T23:59:59 또는 2026.04.15)
-            match_full = re.search(r'(\d{4})[./-](\d{1,2})[./-](\d{1,2})', cleaned)
+            match_full = re.search(r"(\d{4})[./-](\d{1,2})[./-](\d{1,2})", cleaned)
             if match_full:
                 year, month, day = map(int, match_full.groups())
                 dt = datetime(year, month, day)
-                weekdays = ['월', '화', '수', '목', '금', '토', '일']
                 return f"~{dt.month}/{dt.day}({weekdays[dt.weekday()]})"
 
             # 월/일만 있는 형식 (예: 04.15, 4/15, 4월 15일)
-            match_md = re.search(r'(\d{1,2})[./월]\s*(\d{1,2})일?', cleaned)
+            match_md = re.search(r"(\d{1,2})[./월-]\s*(\d{1,2})일?", cleaned)
             if match_md:
                 month, day = map(int, match_md.groups())
-                current_year = datetime.now().year
-                dt = datetime(current_year, month, day)
-                weekdays = ['월', '화', '수', '목', '금', '토', '일']
+                dt = datetime(now.year, month, day)
                 return f"~{dt.month}/{dt.day}({weekdays[dt.weekday()]})"
         except Exception:
             pass
 
         return cleaned if cleaned else "상시 채용"
-
     def fetch_jobs(self) -> List[Job]:
         # CI 환경 예외 처리 (타 수집기들과 동일 패턴)
         if os.getenv("GITHUB_ACTIONS") == "true":
