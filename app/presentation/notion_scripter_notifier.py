@@ -194,6 +194,8 @@ class NotionScripterNotifier:
             return "REMEMBER"
         elif "zighang.com" in url_lower:
             return "ZIGHANG"
+        elif "inthiswork.com" in url_lower:
+            return "INTHISWORK"
         return "기타"
 
     def fetch_jobs_by_status(self, status_field: str, status_value: str) -> List[Dict[str, Any]]:

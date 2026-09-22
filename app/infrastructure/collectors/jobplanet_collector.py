@@ -105,7 +105,7 @@ class JobplanetCollector(JobCollectorRepository):
                     "education_level_id": "",
                     "order_by": "recent",  # 최신순 정렬
                     "page": page,
-                    "page_size": 30
+                    "page_size": 50
                 }
 
                 res = requests.get(
@@ -135,7 +135,7 @@ class JobplanetCollector(JobCollectorRepository):
                         landing_url = str(item.get("link") or item.get("landing_url") or "").lower()
 
                         if (
-                            apply_type in ["jobkorea_inlink", "external_link"]
+                            apply_type in ["jobkorea_inlink"]
                             or jobkorea_id is not None
                             or "jobkorea.co.kr" in landing_url
                         ):

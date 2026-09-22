@@ -27,5 +27,9 @@ class CompositeJobCollector(JobCollectorRepository):
     def fetch_job_detail(self, job: Job) -> str:
         for collector in self.collectors:
             if collector.supports(job.platform):
-                return collector.fetch_job_detail(job)
+                try:
+                    return collector.fetch_job_detail(job)
+                except Exception as e:
+                    print(f"[{collector.__class__.__name__}] 상세 조회 오류 ({job.id}): {e}")
+                    break
         return f"직무명: {job.title} / 회사명: {job.company} / 위치: {job.location} / 마감일: {job.deadline}"
