@@ -18,6 +18,7 @@ from app.infrastructure.collectors.linkareer_collector import LinkareerCollector
 from app.infrastructure.collectors.linkedin_collector import LinkedinCollector
 from app.infrastructure.collectors.remember_collector import RememberCollector
 from app.infrastructure.collectors.zighang_collector import ZighangCollector
+from app.infrastructure.collectors.inthiswork_collector import InthisworkCollector
 
 
 def _verify_collector_result(collector_name: str, jobs: list):
@@ -112,9 +113,6 @@ def test_incruit_collector_real_fetch():
 
 
 import re
-import pytest
-from app.infrastructure.collectors.jobplanet_collector import JobplanetCollector
-
 
 def test_jobplanet_collector_real_fetch():
     print("\n[TEST START] 잡플래닛 수집기 테스트 시작")
@@ -131,9 +129,10 @@ def test_jobplanet_collector_real_fetch():
     print(f"🔍 [디버그] 잡플래닛 정상 URL 확인: {first_job.url}")
 
     # 2. 마감일 D-day 파싱 결과 검증 (~M/D(요일) 패턴 또는 상시 채용)
+    # [수정] re.match() 함수를 직접 호출하여 타입 추론 및 실행 에러를 완벽 방지
     deadline_pattern = r'^(~\d{1,2}/\d{1,2}\([월화수목금토일]\)|상시 채용)$'
     for job in jobs:
-        assert re.match(deadline_pattern, job.deadline), \
+        assert re.match(deadline_pattern, str(job.deadline)) is not None, \
             f"[잡플래닛] 마감일 D-day 파싱 오류: '{job.deadline}'"
     print(f"🔍 [디버그] 수집된 공고 {len(jobs)}건의 마감일 포맷 파싱 정상 확인")
 
@@ -217,3 +216,16 @@ def test_zighang_collector_real_fetch():
     collector = ZighangCollector()
     jobs = collector.fetch_jobs()
     _verify_collector_result("직행", jobs)
+
+
+def test_inthiswork_collector_real_fetch():
+    print("\n[TEST START] 인디스워크 수집기 테스트 시작")
+    collector = InthisworkCollector()
+    jobs = collector.fetch_jobs()
+    _verify_collector_result("인디스워크", jobs)
+
+    if jobs:
+        first_job = jobs[0]
+        assert "inthiswork.com" in first_job.url, \
+            f"[인디스워크] URL 포맷 오류: '{first_job.url}' -> 'inthiswork.com' 도메인이 포함되어야 합니다."
+        print(f"🔍 [디버그] 인디스워크 정상 URL 확인: {first_job.url}")

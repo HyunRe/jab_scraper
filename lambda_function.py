@@ -16,6 +16,7 @@ from app.infrastructure.collectors.linkareer_collector import LinkareerCollector
 from app.infrastructure.collectors.linkedin_collector import LinkedinCollector
 from app.infrastructure.collectors.remember_collector import RememberCollector
 from app.infrastructure.collectors.zighang_collector import ZighangCollector
+from app.infrastructure.collectors.inthiswork_collector import InthisworkCollector
 from app.infrastructure.composite_collector import CompositeJobCollector
 from app.infrastructure.file_repository import LocalFileRepository
 from app.infrastructure.deduplicator import JobDeduplicator
@@ -127,7 +128,8 @@ def lambda_handler(event, context):
             LinkareerCollector(),
             LinkedinCollector(),
             RememberCollector(),
-            ZighangCollector()
+            ZighangCollector(),
+            InthisworkCollector()
         ]
         job_collector = CompositeJobCollector(collectors)
         collected_jobs = job_collector.collect()
